@@ -1,0 +1,460 @@
+---
+title: "The Tragedy of McCorkle Mania"
+subtitle: "CHEFFS 21"
+author: "Andrew Dickinson"
+date: </br>`r format(Sys.time(), '%d %B %Y')`
+output:
+  html_document:
+    code_folding: hide
+    toc: no
+    toc_depth: 5
+    number_sections: no
+    theme: flatly
+    highlight: tango
+    toc_float:
+      collapsed: yes
+      smooth_scroll: yes
+header-includes:
+- \usepackage{mathtools}
+- \DeclarePairedDelimiter\floor{\lfloor}{\rfloor}
+- \usepackage{amssymb}
+---
+
+```{r, setup, echo=FALSE}
+options(scipen = 999) 
+knitr::opts_chunk$set(warning = FALSE) 
+knitr::opts_chunk$set(message = FALSE) 
+pacman::p_load(tidyverse, data.table, here, ggplot2,
+               hrbrthemes, tidyr, plotly, magrittr, ggridges)
+source("~/Documents/scripts/colors/colors.R")
+set.seed(12)
+```
+
+```{r, data-clean, eval=FALSE, echo=FALSE}
+# load raw data
+pts_df <- fread('./data/pts.csv') %>% select(team, week, pts, opponent) %>% 
+  rename(pf = pts) %>% 
+  # fix fucked data imputation
+  mutate(opponent = str_replace(opponent, "younghoe__kyu", "younghoe_kyu")) %>% 
+  # merge opponent scores; count wins
+  inner_join(pts %>% filter(between(week,1,14)) %>% select(team, week, pts),
+               by = c('opponent' = 'team', 'week' = 'week')) %>% 
+  rename(pf = pf, 
+         pa = pts) %>% 
+  mutate(win = ifelse(pf > pa, 1, 0)) %>% 
+  add_row(team = 'mccorkle_mania', week = 0, pf = 0, opponent = NA, pa = 0, win = NA) %>% 
+  add_row(team = 'philadelphia_collins',week = 0, pf = 0, opponent = NA, pa = 0, win = NA) %>% 
+  add_row(team = 'pray_4_ek',week = 0, pf = 0, opponent = NA, pa = 0, win = NA) %>% 
+  add_row(team = 'oft',week = 0, pf = 0, opponent = NA, pa = 0, win = NA) %>% 
+  add_row(team = 'scisneros',week = 0, pf = 0, opponent = NA, pa = 0, win = NA) %>% 
+  add_row(team = 'urban_strokes',week = 0, pf = 0, opponent = NA, pa = 0, win = NA) %>% 
+  add_row(team = 'younghoe_kyu',week = 0, pf = 0, opponent = NA, pa = 0, win = NA) %>% 
+  add_row(team = 'utility_curve',week = 0, pf = 0, opponent = NA, pa = 0, win = NA) %>% 
+  add_row(team = 'hail_murray',week = 0, pf = 0, opponent = NA, pa = 0, win = NA) %>% 
+  add_row(team = 'cursed_by_godwin',week = 0, pf = 0, opponent = NA, pa = 0, win = NA) %>% 
+  add_row(team = 'shits_kittles',week = 0, pf = 0, opponent = NA, pa = 0, win = NA) %>% 
+  add_row(team = 'fuck_oft',week = 0, pf = 0, opponent = NA, pa = 0, win = NA) %>% 
+ # add real names
+  mutate(playoff = ifelse(week > 14, 1, 0), 
+         team_name = case_when(
+           team == 'mccorkle_mania' ~ 'Mccorkle Mania', 
+           team == 'philadelphia_collins' ~ 'Philadelphia Collins',
+           team == 'pray_4_ek' ~ 'Pray 4 Ek',
+           team == 'oft' ~ 'Oregon Football Team',
+           team == 'scisneros' ~ 'Scisneros',
+           team == 'urban_strokes' ~ 'Urban Strokes Crotch',
+           team == 'younghoe_kyu' ~ 'Gay for Younghoe Kyu',
+           team == 'utility_curve' ~ 'Utility Curve',
+           team == 'hail_murray' ~ 'Hail Murray',
+           team == 'cursed_by_godwin' ~ 'Cursed by God(win)',
+           team == 'shits_kittles' ~ 'Shits and Kittles',
+           team == 'fuck_oft' ~ 'Fuck the Oregon Football Team')
+         ) %>% 
+  group_by(team) %>% 
+    mutate(wins = sum(win, na.rm = TRUE)) %>% 
+  ungroup() %>% 
+  select(week, team, team_name, pf, opponent, pa, win, wins, playoff) %>%
+  arrange(week, team)
+
+fwrite(pts_df, here('data/', 'pts_df.csv'))
+```
+
+```{r, data-load, echo=FALSE}
+pts_df <- here('data', 'pts_df.csv') %>% fread()
+```
+
+<font size = "4">
+
+Let’s all raise a cold one for the most tragic outcome I have ever witnessed in a fantasy season. A true hero to zero story. The Tragedy of McCorkle Mania
+
+It is just absurd (and hilarious) to me that Zach missed the playoffs. From the start of the season, he was ahead in PF (points for) and stayed ahead all season by a wide margin. Yet at the same time he also led league in PA (points against) by a wide margin. So what are the odds of this happening? How unlucky did McCorkle Mania get? 
+
+To try to answer this, I decided to scrap (and by scrap I mean impute by hand) the weekly scores from sleeper into a dataset to try and visualize + quantify how absurd this outcome was. The master dataset looks like this:
+
+```{r, head, echo=FALSE}
+pts_df[13:28,] %>% 
+  select(week, team, opponent, pf, pa) %>% 
+  knitr::kable() %>% 
+  kableExtra::kable_minimal()
+```
+
+
+```{r, gg-data}
+# create cumulative variables
+pts = pts_df %>% 
+  group_by(team) %>% 
+    mutate(cum_pts = cumsum(coalesce(pf, 0)) + pf*0,
+           ave_cum_pts = cum_pts/week,
+           total_pts = sum(pf, na.rm = TRUE),
+           cum_opp_pts = cumsum(coalesce(pa, 0)) + pa*0,
+           ave_cum_opp_pts = cum_opp_pts/week,
+           total_opp_pts = sum(pa, na.rm = TRUE)) %>% 
+    fill(cum_pts, ave_cum_pts,
+         cum_opp_pts, ave_cum_opp_pts,
+         .direction = 'down') %>% 
+  ungroup() %>% 
+  group_by(week) %>% 
+    mutate(league_ave_cum_pts = sum(cum_pts)/12,
+           z_cum_pts          = round(cum_pts - league_ave_cum_pts, digits = 2),
+           z_cum_opp_pts      = round(cum_opp_pts - league_ave_cum_pts, digits = 2)) %>% 
+  ungroup()
+```
+
+```{r, factors, echo=FALSE}
+pts$team_name <- factor(pts$team_name, levels = c('Mccorkle Mania', 'Philadelphia Collins', 'Pray 4 Ek', 'Oregon Football Team', 'Scisneros',
+                                          'Urban Strokes Crotch', 'Gay for Younghoe Kyu', 'Utility Curve', 'Hail Murray', 'Cursed by God(win)',
+                                          'Shits and Kittles', 'Fuck the Oregon Football Team'))
+```
+
+I only capture weeks PF and PA as well as who each team played throughout the season. Everything is aggregated to the week-by-team level. I have data for the playoffs but since there are first round byes, I limit this analysis to the regular season (week1-week14). If you would like to read these data on your own computer for analysis, I have attached a zip file that contains all data and R code that I used to create this analysis.
+
+To visualize the dominance of McCorkle Mania, the following plot shows cumulative PF (points for) across the season for each team:
+
+```{r, tsplot, fig.height=8, fig.width=10}
+tsplot <- ggplot(pts, aes(x = week, y = cum_pts, group = team_name, color = team_name )) +
+  geom_point(size = 1.5) +
+  geom_line(size = 1.5) +
+  geom_line(aes(y = league_ave_cum_pts), linetype = 'dashed', color = 'grey25') +
+  theme_ipsum() +
+  labs(
+    title = "Plot 01: Raw cumulative PF by team",
+    subtitle = 'Cumulative league average shown as dashed line',
+    x = "Week",
+    y = "Cumulative PF",
+    color = 'Team name'
+    ) +
+  theme(
+    panel.grid.minor = element_blank()
+  ) +
+  scale_x_continuous(breaks = c(0, 7, 14)) +
+  scale_color_viridis_d(option = 'magma', end = 0.95)
+
+tsplot %>% plotly::ggplotly(tooltip = c("text", "size"), dynamicTicks = TRUE)
+```
+
+Obviously the upward trend in PF over the season masks a lot of the variation in PF across the league. So “demeaning” the data by the cumulative average allows us to see the variation in PF across season and team.
+
+```{r, cum_plot, fig.height=8, fig.width=10, warning=FALSE}
+cum_plot <- ggplot(pts %>% filter(playoff == 0), aes(x = week, y = z_cum_pts, group = team_name, color = team_name)) +
+  # geom_rect(ymin = -500, ymax = 500, xmin = playoff_start, xmax = 17, alpha = 0.03, color = "white", fill = "grey90") +
+  # geom_vline(xintercept = playoff_start, linetype = 'dashed', size = 0.5) +
+  geom_point(size = .5) +
+  geom_line(size = 1.5, alpha = 0.85) +
+  labs(
+    title = "Plot 02: Cumulative PF above league average",
+    subtitle = 'Demeaned week-by-league average',
+    x = "Week",
+    y = "Cumulative points (demeaned)",
+    color = 'Team name'
+    ) +
+  theme_ipsum() +
+  theme(
+    panel.grid.minor = element_blank()
+  ) +
+  # scale_color_viridis_d(option = 'magma', end = 0.95) +
+  # scale_color_discrete(type = grant_pal) +
+  scale_color_viridis_d(option = 'inferno', begin = 0.1, end = 0.9) +
+  scale_x_continuous(breaks = c(0, 7, 14)) +
+  scale_y_continuous(breaks = seq(-300, 300, 150))
+
+cum_plot %>% plotly::ggplotly(tooltip = c("text", "size"), dynamicTicks = TRUE)
+```
+
+In a similar vein, PA (points against) is plotted 
+
+```{r, opp_cum_plot, fig.height=8, fig.width=10, warning=FALSE}
+opp_cum_plot <- ggplot(pts %>% filter(playoff == 0), aes(x = week, y = z_cum_opp_pts, group = team_name, color = team_name)) +
+  # geom_rect(ymin = -500, ymax = 500, xmin = playoff_start, xmax = 17, alpha = 0.03, color = "white", fill = "grey90") +
+  # geom_vline(xintercept = playoff_start, linetype = 'dashed', size = 0.5) +
+  # geom_point(size = 2.5) +
+  geom_line(size = 1.5, alpha = 0.85) +
+  labs(
+    title = "Plot 03: Cumulative PA above league average",
+    subtitle = 'Demeaned week-by-league average',
+    x = "Week",
+    y = "Cumulative points (demeaned)",
+    color = 'Team name',
+    caption = 'This is a dynamic plot. Click on legend to add/remove teams.'
+    ) +
+  theme_ipsum() +
+  theme(
+    panel.grid.minor = element_blank()
+  ) +
+  # scale_color_viridis_d(option = 'magma', end = 0.95) +
+  # scale_color_discrete(type = grant_pal) +
+  scale_color_viridis_d(option = 'inferno', begin = 0.1, end = 0.9) +
+  scale_x_continuous(breaks = c(0, 7, 14)) +
+  scale_y_continuous(breaks = seq(-300, 300, 150), limits = c(-300, 300))
+
+opp_cum_plot %>% plotly::ggplotly(tooltip = c("text", "size"), dynamicTicks = TRUE)
+```
+
+Plots 02 and 03 tell us what we already know. McCorkle Mania scored a shit ton of points above the league average but also got blasted in the ass by matchups. Compared to plot 02, plot 03 looks much more random- which makes sense. Matchups were determined at the beginning of the season using RNG. No team has control over how many points are scored against them. Put differently, McCorkle Mania got boned by the scheduling draw from the start of the season. Had McCorkle Mania played a different schedule, he would have likely reached the playoffs.
+
+So what would have happened, had the schedule looked different? If we are willing to assume each team's weekly score remain the same had the schedule looked different from the start of the season, we can quantify how unlucky McCorkle Mania was. How many wins, on average, would each team have realized holding week to week scores fixed but randomizing who each team played. By randomly sampling all possible schedules, we can simulate season average wins for each team.
+
+
+### Simulated seasons
+
+To randomly sample schedules, I followed the same format as Sleeper. A team plays each other at least once every season. After week 11, the pattern repeats. So if I played Kyu week1, Toshio week2, and Kyler week3, I would play the same teams in weeks 12-14.
+
+I wrote a function that randomly samples a team’s schedule over a uniform distribution. Comparing scores against simulated opponents, it counts how many wins by the end of week14. Then I wrote a loop over the function, simulating 10,000 seasons and collected the results. 
+
+__Note:__ This random sampling occurs at the team level, not the league level. I could not figure out how to write an algorithm to simulated the entire schedule across all teams. Since we assume a uniform distribution it should not matter for determining average wins but I am limited in saying anything about we makes the playoffs. This year, winning 8 games came close to ensuring a playoff birth. If anyone would like to help out and figure out how to simulate a league wide schedule, let me know if you figure it out. R or Python would work great.
+
+```{r, sim-fun}
+# function that randomly samples schedules; determines wins
+wins_sim = function(data, X, Y, Z, iter = 1) {
+  
+  team_df = data %>% 
+    filter((!! rlang::sym(X)) == Z) 
+  
+  opponents = data %>%
+    filter(!is.na(opponent)) %>% 
+    select(opponent) %>% 
+    unique() %>% 
+    filter((!! rlang::sym(Y)) != Z)
+  
+  list = sample_n(opponents, 11, replace = FALSE) %>% 
+    as.vector() %>% 
+    rename(fake = opponent)
+  
+  list %<>% add_row(list[1:3,])
+  
+  team_df %>% 
+    filter(between(week,1,14)) %>% 
+    mutate(list) %>% 
+    inner_join(pts %>% filter(between(week,1,14)) %>% select(team, week, pf),
+               by = c('fake' = 'team', 'week' = 'week')) %>% 
+    rename(pf = pf.x, pa_fake = pf.y) %>% 
+    mutate(win_fake = ifelse(pf > pa_fake,1,0),
+           iter = iter) %>% 
+    group_by(team, team_name) %>% 
+    mutate(wins_fake = sum(win_fake)) %>% 
+    ungroup
+  
+}
+
+# wins_sim(pts_df, X = 'team', Y = 'opponent', Z = 'oft')
+```
+
+```{r, loop-fun, echo=FALSE, eval=FALSE}
+season_sim = function(iter = 1, data = pts_df, X = 'team', Y = 'opponent', Z = 'oft'){
+  
+  sim_list = map(1:iter, wins_sim, data = data, X = X, Y = Y, Z = Z)
+  
+  sim_df <- bind_rows(sim_list) %>% 
+    select(iter, team, team_name, week, pf, fake, pa, pa_fake, win, wins, win_fake, wins_fake)
+  
+  return(sim_df)
+}
+```
+
+```{r, sim10000, eval=FALSE, echo = TRUE}
+# test2000 <- season_sim(iter = 2000, data = pts_df, X = 'team', Y = 'opponent', Z = 'oft')
+tictoc::tic()
+test10000 <- lapply(sort(unique(pts_df$team)),
+                    function(i) {
+                      
+                      season_sim(iter = 10000, data = pts_df, X = 'team', Y = 'opponent', Z = i)
+
+                    }) %>% bind_rows()
+tictoc::toc()
+
+fwrite(test10000, 'data/sim10000.csv')
+```
+
+```{r, read-sim, echo=FALSE}
+sim10000 <- here('data', 'sim10000.csv') %>% fread()
+```
+
+```{r, sim-clean}
+# clean up and add additional vars to simmed data
+sim <- sim10000 %>% 
+  group_by(iter, team, team_name) %>% 
+    summarize(wins      = mean(wins),
+              wins_fake = mean(wins_fake)) %>% 
+  ungroup %>% 
+  group_by(team, team_name) %>% 
+    mutate(mean_wins = mean(wins_fake),
+           min = min(wins_fake),
+           max = max(wins_fake),
+           wins_diff = wins - mean_wins) %>% 
+  ungroup() %>% 
+  mutate(actual = ifelse(wins_fake == wins, 1, 0),
+         team_name = fct_reorder(team_name, mean_wins))
+```
+
+```{r, fig.width=10, fig.height=6}
+sim %>% 
+  mutate(team_name = fct_reorder(team_name, wins_diff)) %>% 
+  ggplot(aes(y = team_name, x = wins_diff, group = team_name, color = wins_diff)) +
+    geom_linerange(aes(xmin = 0, xmax = wins_diff), size = 12) +
+    theme_ipsum() +
+    scale_x_continuous(breaks = seq(-4,4,1)) +
+    scale_color_viridis_c(option = 'inferno', end = 0.9) +
+    # scale_color_continuous(type = 'gradient') +
+    # scale_color_distiller(type = 'div', palette = 'RdBu') +
+    theme(
+      # panel.grid.major.y = element_blank(),
+      panel.grid.minor.x = element_blank(),
+      legend.position = 'none'
+    ) +
+    labs(
+      title = 'Plot 05: How lucky each team get?',
+      x = 'Wins above average',
+      y = '',
+      color = 'Luck'
+    )
+```
+
+Histograms of wins per season are presented below for each team. Light blue indicates the true number of wins recorded during this timeline. Teams are ordered by average wins largest to smallest.
+
+```{r, ridges, fig.height=8, fig.width=10}
+ggplot(data = sim, aes(x = mean_wins, y = team_name)) +
+  geom_density_ridges(stat = "binline", binwidth = 1,
+                      aes(x = wins_fake,
+                          y = team_name),
+                      rel_min_height = 0.0003,
+                      scale = 0.9,
+                      size = 0.3,
+                      color = 'white',
+                      fill = "#007fff", 
+                      alpha = 0.2
+                    ) +
+  geom_point(aes(x = wins), color = "#21b4fd", size = 2) +
+  geom_point(color = "#082c44", size = 2) +
+  geom_linerange(aes(xmin = min, xmax = max), color = 'grey50', size = 0.2) +
+  theme_ipsum() +
+  scale_x_continuous(limits = c(0, 15), breaks = seq(0,15,5)) +
+  theme(
+    # panel.grid.major.x = element_blank(),
+    panel.grid.major.y = element_blank(),
+    panel.grid.minor.y = element_blank(),
+    legend.position = 'none'
+  ) +
+  labs(
+    title = 'Plot 06: Simulated wins',
+    subtitle = '10,000 seasons',
+    x = 'Wins',
+    y = '',
+    caption = 'Average wins per season are shown in dark blue (double). Realized wins are shown in light blue (integer)'
+  )
+
+```
+
+Extra histograms with associated densities printed in orange.
+
+```{r, fig.height=12, fig.width=16}
+ggplot(data = sim, aes(x = wins_fake, group = factor(actual), fill = factor(actual))) +
+  geom_histogram(binwidth = 1, color = 'white', size=0.2) +
+  geom_text(stat= "count", aes(label=((..count..)/10000)), vjust=0, color = 'orange', size=3) +
+  theme_ipsum() +
+  facet_wrap(~team_name, nrow = 6, dir = 'v') +
+  scale_x_continuous(breaks = seq(0,14,1)) +
+  scale_y_continuous(limits = c(0, 4000), labels = scales::comma) +
+  scale_fill_manual(values = c('#082c44', '#21b4fd')) +
+  theme(
+    panel.grid.minor.x = element_blank(),
+    panel.grid.major.y = element_blank(),
+    panel.grid.minor.y = element_blank(),
+    legend.position = 'none'
+  ) +
+labs(
+  title = 'Plot 07: Simulated wins',
+  subtitle = '10,000 seasons',
+  y = 'Count',
+  x = 'Wins'
+)
+```
+
+### Limitations and conclusion
+
+Since I am sampling each individual teams schedule, and not the entire league, I cannot say much more than average wins during the regular season. In the future, if I can figure out how to code up a league sampling function, I could observe actual probabilities of making it into the playoff. But apart from that, I don't think I could say much about champions/sacko using these simulations. Also, while Scisneros was clearly the 'luckiest' team with regard to scheduling, his team crushed the post season. Since your previous league champ went 6-6 during the regular season, we know post season scoring is all that matters in the end.
+
+But for now this simulation is very telling. McCorkle Mania would have made the playoffs in any season as top PF scorer with 8 wins. The density functions above show that in 10,000 seasons, he would have won at least 8 games ~97% of the time. And that is almost certainly a lower bound. That being said, we are making a very restrictive assumption in saying that each team would have scored the same had the schedule drawn looked different. I thought about adding in an $\varepsilon_{it}$ error term for scoring to account for uncertainty but decided against it. Regardless of the strong assumption, this is a somewhat reasonable counterfactual.
+
+That being said, McCorkle Mania struggled to score in the post season. To add insult to injury, not only did they miss the playoffs, he lost to the two worst performing teams this season. Somehow Fuck the Oregon Football Team snaked out of a sacko birth after ending the regular season with the following scores: (week 11, 56.82) - (week 12, 69.72 nice) - (week 13, 78.56) - (week 14, 42.24), beating McCorkle Mania 108.6 to 97.18. Furthermore, McCorkle Mania lost to the 3 win team Shits and Kittles in the Toliet Bowl by < 1 pt. The second highest score for Shits and Kittles all season. I think it is fair to put a little asterisk next to the sacko title this year.
+
+Obviously I got a little carried away with this. I was curious about simulating the regular season but I did not think it would be this much work. But now I can reuse this code for future analysis next season. All the data, R code are attached in a zip file to this email if you would like to poke around with the data/build on this. Seriously, can someone help we randomly sample league schedules? I'll give you a dollar.
+
+<br>
+<br>
+<br>
+<br>
+<br>
+<br>
+<br>
+<br>
+<br>
+<br>
+<br>
+</font>
+
+```{r, eval=FALSE, echo=FALSE}
+den_data = sim10000 %>% 
+  group_by(iter, team, team_name) %>% 
+    summarize(wins      = mean(wins),
+              wins_fake = mean(wins_fake)) %>% 
+  ungroup %>% 
+  mutate(one = 1) %>% 
+  group_by(team, wins_fake) %>% 
+    mutate(count_wins_fake = sum(one),
+           pct_wins_fake = count_wins_fake/10000) %>% 
+  ungroup() %>% 
+  mutate(actual = ifelse(wins_fake == wins, 1, 0)) 
+
+
+
+ggplot(data = den_data, aes(x = wins_fake, y = team_name, fill = pct_wins_fake)) +
+  geom_tile() +
+  theme_ipsum() + 
+  scale_x_continuous(breaks = seq(0,14,2)) +
+  scale_fill_viridis_c(option = 'magma', begin = 0.1, end = 0.95) +
+  theme(
+      panel.grid.minor.x = element_blank(),
+      panel.grid.major.x = element_blank(),
+      panel.grid.major.y = element_blank(),
+      panel.grid.minor.y = element_blank()
+    ) +
+  labs(
+    title = '',
+    subtitle = '10,000 seasons',
+    x = 'Wins',
+    y = 'Team'
+  )
+```
+
+```{r, eval=FALSE, echo=FALSE}
+sim10000 %>% 
+  group_by(iter, team, team_name) %>% 
+    summarize(wins      = mean(wins),
+              wins_fake = mean(wins_fake)) %>% 
+  ungroup %>% 
+  mutate(actual = ifelse(wins_fake == wins, 1, 0),
+         wins_fake_pct = wins_fake/10000) %>% 
+  ggplot(aes(x = team_name)) +
+    geom_density() +
+    theme_ipsum()
+```
+
