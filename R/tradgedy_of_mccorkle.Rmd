@@ -27,7 +27,7 @@ knitr::opts_chunk$set(message = FALSE)
 pacman::p_load(tidyverse, data.table, here, ggplot2,
                hrbrthemes, tidyr, plotly, magrittr, ggridges)
 source("~/Documents/scripts/colors/colors.R")
-set.seed(12)
+set.seed(12345)
 ```
 
 ```{r, data-clean, eval=FALSE, echo=FALSE}
@@ -87,9 +87,9 @@ pts_df <- here('data', 'pts_df.csv') %>% fread()
 
 Let’s all raise a cold one for the most tragic outcome I have ever witnessed in a fantasy season. A true hero to zero story. The Tragedy of McCorkle Mania
 
-It is just absurd (and hilarious) to me that Zach missed the playoffs. From the start of the season, he was ahead in PF (points for) and stayed ahead all season by a wide margin. Yet at the same time he also led league in PA (points against) by a wide margin. So what are the odds of this happening? How unlucky did McCorkle Mania get? 
+It is just absurd (and hilarious) to me that Zach missed the playoffs. From the start of the season, he was ahead in PF (points for) and stayed ahead all season by a wide margin. Yet at the same time he also led league in PA (points against). So what are the odds of this happening? How unlucky did McCorkle Mania get?
 
-To try to answer this, I decided to scrap (and by scrap I mean impute by hand) the weekly scores from sleeper into a dataset to try and visualize + quantify how absurd this outcome was. The master dataset looks like this:
+To try to answer this, I decided to scrape (and by scrape I mean impute by hand) the weekly scores from sleeper into a dataset to try and visualize + quantify how absurd this outcome was. The master dataset looks like this:
 
 ```{r, head, echo=FALSE}
 pts_df[13:28,] %>% 
@@ -126,7 +126,7 @@ pts$team_name <- factor(pts$team_name, levels = c('Mccorkle Mania', 'Philadelphi
                                           'Shits and Kittles', 'Fuck the Oregon Football Team'))
 ```
 
-I only capture weeks PF and PA as well as who each team played throughout the season. Everything is aggregated to the week-by-team level. I have data for the playoffs but since there are first round byes, I limit this analysis to the regular season (week1-week14). If you would like to read these data on your own computer for analysis, I have attached a zip file that contains all data and R code that I used to create this analysis.
+I only capture weeks PF and PA as well as who each team played throughout the season. Everything is aggregated to the week-by-team level. I have data for the playoffs but since there are first round byes, I limit this analysis to the regular season (week1-week14).
 
 To visualize the dominance of McCorkle Mania, the following plot shows cumulative PF (points for) across the season for each team:
 
@@ -211,16 +211,16 @@ opp_cum_plot %>% plotly::ggplotly(tooltip = c("text", "size"), dynamicTicks = TR
 
 Plots 02 and 03 tell us what we already know. McCorkle Mania scored a shit ton of points above the league average but also got blasted in the ass by matchups. Compared to plot 02, plot 03 looks much more random- which makes sense. Matchups were determined at the beginning of the season using RNG. No team has control over how many points are scored against them. Put differently, McCorkle Mania got boned by the scheduling draw from the start of the season. Had McCorkle Mania played a different schedule, he would have likely reached the playoffs.
 
-So what would have happened, had the schedule looked different? If we are willing to assume each team's weekly score remain the same had the schedule looked different from the start of the season, we can quantify how unlucky McCorkle Mania was. How many wins, on average, would each team have realized holding week to week scores fixed but randomizing who each team played. By randomly sampling all possible schedules, we can simulate season average wins for each team.
+So what would have happened, had the schedule looked different? If we are willing to assume each team’s weekly score remain the same had the schedule looked different from the start of the season, we can quantify how unlucky McCorkle Mania was. How many wins, on average, would each team have realized holding week to week scores fixed but randomizing who each team played week to week. By randomly sampling all possible schedules, we can simulate season average wins for each team.
 
 
 ### Simulated seasons
 
 To randomly sample schedules, I followed the same format as Sleeper. A team plays each other at least once every season. After week 11, the pattern repeats. So if I played Kyu week1, Toshio week2, and Kyler week3, I would play the same teams in weeks 12-14.
 
-I wrote a function that randomly samples a team’s schedule over a uniform distribution. Comparing scores against simulated opponents, it counts how many wins by the end of week14. Then I wrote a loop over the function, simulating 10,000 seasons and collected the results. 
+I wrote a function that randomly samples a team’s schedule over a uniform distribution. Comparing scores against simulated opponents, it counts how many wins by the end of week14. Then I wrote a loop over the function, simulating 10,000 seasons and collected the results.
 
-__Note:__ This random sampling occurs at the team level, not the league level. I could not figure out how to write an algorithm to simulated the entire schedule across all teams. Since we assume a uniform distribution it should not matter for determining average wins but I am limited in saying anything about we makes the playoffs. This year, winning 8 games came close to ensuring a playoff birth. If anyone would like to help out and figure out how to simulate a league wide schedule, let me know if you figure it out. R or Python would work great.
+Note: This random sampling occurs at the team level, not the league level. I could not figure out how to write an algorithm to simulated the entire schedule across all teams. Since we assume a uniform distribution it should not matter for determining average wins but I am limited in saying anything about we makes the playoffs. This year, winning 8 games came close to ensuring a playoff birth. If anyone would like to help out and figure out how to simulate a league wide schedule, let me know if you figure it out. R or Python would work great.
 
 ```{r, sim-fun}
 # function that randomly samples schedules; determines wins
@@ -328,7 +328,8 @@ sim %>%
     )
 ```
 
-Histograms of wins per season are presented below for each team. Light blue indicates the true number of wins recorded during this timeline. Teams are ordered by average wins largest to smallest.
+Histograms of wins per season are presented below for each team. Light blue indicates the true number of wins recorded during this timeline. Teams are ordered by average wins largest to smallest. As one can clearly see. The outcome we observed (McCorkle Mania winning 7 games) was a rare event. In 10,000 iterations, it was only observed 275 times
+
 
 ```{r, ridges, fig.height=8, fig.width=10}
 ggplot(data = sim, aes(x = mean_wins, y = team_name)) +
